@@ -1,0 +1,8 @@
+scraper:
+  url: "https://coinmarketcap.com/"
+  firebase:
+    tipo: "firestore"
+    colecao: "moedas"
+  intervalo: "diario"
+  horario: "08:00"
+  navegador: "chrome_headless"
