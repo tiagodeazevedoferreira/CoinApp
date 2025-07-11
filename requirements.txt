@@ -1,0 +1,6 @@
+selenium
+webdriver-manager
+firebase-admin
+python-dotenv
+pandas
+schedule
