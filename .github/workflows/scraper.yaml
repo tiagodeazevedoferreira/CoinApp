@@ -25,8 +25,8 @@ jobs:
 
     - name: Instalar o Chrome e dependências
       run: |
-        sudo apt update
-        sudo apt install -y wget unzip xvfb libxi6 libnss3 libxss1 fonts-liberation libgbm1 libasound2
+        sudo apt-get update
+        sudo apt-get install -y wget unzip xvfb libxi6 libnss3 libxss1 fonts-liberation libgbm1 libasound2t64
         wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
         sudo dpkg -i google-chrome-stable_current_amd64.deb || sudo apt-get -f -y install
 
