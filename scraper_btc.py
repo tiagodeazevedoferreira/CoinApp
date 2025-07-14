@@ -9,6 +9,7 @@ import firebase_admin
 from firebase_admin import credentials, db
 import json
 import os
+import time
 
 # Configurações do Selenium
 options = webdriver.ChromeOptions()
@@ -23,17 +24,54 @@ try:
     url_btc_historico = "https://coinmarketcap.com/currencies/bitcoin/historical-data/"
     driver.get(url_btc_historico)
 
-    table_historico = WebDriverWait(driver, 20).until(
-        EC.presence_of_element_located((By.CSS_SELECTOR, ".cmc-table"))
+    # Verificar e alternar para iframe, se presente
+    try:
+        iframes = WebDriverWait(driver, 10).until(
+            EC.presence_of_all_elements_located((By.TAG_NAME, "iframe"))
+        )
+        for iframe in iframes:
+            driver.switch_to.frame(iframe)
+            print("Alternado para iframe.")
+            break  # Assume que a tabela está no primeiro iframe
+    except:
+        print("Nenhum iframe encontrado, continuando no contexto padrão.")
+        driver.switch_to.default_content()
+
+    # Aguardar a tabela estar visível e todas as linhas carregadas
+    table_historico = WebDriverWait(driver, 30).until(
+        EC.visibility_of_element_located((By.CSS_SELECTOR, ".cmc-table"))
     )
-    rows_historico = table_historico.find_elements(By.TAG_NAME, "tr")
+    
+    # Reencontrar as linhas dinamicamente para evitar stale elements
+    def get_rows():
+        return WebDriverWait(driver, 30).until(
+            EC.visibility_of_all_elements_located((By.CSS_SELECTOR, ".cmc-table tr"))
+        )
 
     data_historico = []
-    for row in rows_historico[1:]:
-        cols = row.find_elements(By.TAG_NAME, "td")
-        cols = [col.text.strip() for col in cols]
-        if cols:
-            data_historico.append(cols)
+    retries = 3
+    for attempt in range(retries):
+        try:
+            rows_historico = get_rows()
+            print(f"Encontradas {len(rows_historico)} linhas na tabela.")
+            for row in rows_historico[1:]:  # Ignorar cabeçalho
+                cols = row.find_elements(By.TAG_NAME, "td")
+                cols = [col.text.strip() for col in cols if col.text.strip()]
+                if cols:
+                    data_historico.append(cols)
+            break  # Sai do loop se bem-sucedido
+        except Exception as e:
+            print(f"Tentativa {attempt + 1} falhou: {str(e)}")
+            if attempt < retries - 1:
+                time.sleep(2)  # Pequena espera antes de retry
+                driver.switch_to.default_content()  # Resetar contexto
+                if iframes:
+                    driver.switch_to.frame(iframes[0])  # Reentrar no iframe
+            else:
+                raise Exception("Falha após todas as tentativas.")
+
+    if not data_historico:
+        raise Exception("Nenhuma linha válida extraída da tabela.")
 
     df_historico = pd.DataFrame(data_historico, columns=["Date", "Open", "High", "Low", "Close", "Volume", "Market Cap"])
     
