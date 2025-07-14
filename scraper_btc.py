@@ -13,9 +13,11 @@ import time
 
 # Configurações do Selenium
 options = webdriver.ChromeOptions()
-options.add_argument('--headless')
+options.add_argument('--headless=new')  # Novo modo headless para evitar detecção
 options.add_argument('--no-sandbox')
 options.add_argument('--disable-dev-shm-usage')
+options.add_argument('--disable-blink-features=AutomationControlled')  # Evita detecção anti-bot
+options.add_argument('user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36')
 
 try:
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
@@ -24,28 +26,52 @@ try:
     url_btc_historico = "https://coinmarketcap.com/currencies/bitcoin/historical-data/"
     driver.get(url_btc_historico)
 
-    # Verificar e alternar para iframe, se presente
-    try:
-        iframes = WebDriverWait(driver, 10).until(
-            EC.presence_of_all_elements_located((By.TAG_NAME, "iframe"))
-        )
-        for iframe in iframes:
-            driver.switch_to.frame(iframe)
-            print("Alternado para iframe.")
-            break  # Assume que a tabela está no primeiro iframe
-    except:
-        print("Nenhum iframe encontrado, continuando no contexto padrão.")
-        driver.switch_to.default_content()
+    # Função para encontrar a tabela
+    def find_table():
+        try:
+            # Tentar no contexto principal
+            table = WebDriverWait(driver, 30).until(
+                EC.visibility_of_element_located((By.CSS_SELECTOR, "table[class*='table']"))
+            )
+            print("Tabela encontrada no contexto principal.")
+            return table
+        except:
+            print("Tabela não encontrada no contexto principal. Verificando iframes...")
+        
+        # Tentar em iframes
+        try:
+            iframes = driver.find_elements(By.TAG_NAME, "iframe")
+            print(f"Encontrados {len(iframes)} iframes.")
+            for index, iframe in enumerate(iframes):
+                driver.switch_to.default_content()
+                driver.switch_to.frame(iframe)
+                print(f"Alternado para iframe {index}.")
+                try:
+                    table = WebDriverWait(driver, 10).until(
+                        EC.visibility_of_element_located((By.CSS_SELECTOR, "table[class*='table']"))
+                    )
+                    print(f"Tabela encontrada no iframe {index}.")
+                    return table
+                except:
+                    print(f"Tabela não encontrada no iframe {index}.")
+                    driver.switch_to.default_content()
+        except:
+            print("Nenhum iframe encontrado ou acessível.")
+            driver.switch_to.default_content()
+        
+        raise Exception("Tabela não encontrada em nenhum contexto.")
 
-    # Aguardar a tabela estar visível e todas as linhas carregadas
-    table_historico = WebDriverWait(driver, 30).until(
-        EC.visibility_of_element_located((By.CSS_SELECTOR, ".cmc-table"))
-    )
-    
-    # Reencontrar as linhas dinamicamente para evitar stale elements
+    # Rolar a página para garantir carregamento completo
+    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+    time.sleep(2)  # Espera breve para renderização
+
+    # Encontrar a tabela
+    table_historico = find_table()
+
+    # Reencontrar as linhas dinamicamente
     def get_rows():
         return WebDriverWait(driver, 30).until(
-            EC.visibility_of_all_elements_located((By.CSS_SELECTOR, ".cmc-table tr"))
+            EC.visibility_of_all_elements_located((By.CSS_SELECTOR, "table[class*='table'] tr"))
         )
 
     data_historico = []
@@ -57,16 +83,15 @@ try:
             for row in rows_historico[1:]:  # Ignorar cabeçalho
                 cols = row.find_elements(By.TAG_NAME, "td")
                 cols = [col.text.strip() for col in cols if col.text.strip()]
-                if cols:
-                    data_historico.append(cols)
-            break  # Sai do loop se bem-sucedido
+                if cols and len(cols) >= 7:  # Garante que a linha tem todas as colunas esperadas
+                    data_historico.append(cols[:7])  # Limita às 7 colunas esperadas
+            break
         except Exception as e:
             print(f"Tentativa {attempt + 1} falhou: {str(e)}")
             if attempt < retries - 1:
-                time.sleep(2)  # Pequena espera antes de retry
-                driver.switch_to.default_content()  # Resetar contexto
-                if iframes:
-                    driver.switch_to.frame(iframes[0])  # Reentrar no iframe
+                time.sleep(2)
+                driver.switch_to.default_content()
+                table_historico = find_table()  # Reencontrar tabela
             else:
                 raise Exception("Falha após todas as tentativas.")
 
